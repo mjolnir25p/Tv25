@@ -1,0 +1,83 @@
+name: Build TV25 APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Obter repositorio
+        uses: actions/checkout@v5
+
+      - name: Configurar Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Configurar Android
+        uses: android-actions/setup-android@v3
+
+      - name: Descompactar projeto TV25
+        run: |
+          mkdir -p extracted
+          unzip -q TV25_GitHub_APK_Builder.zip -d extracted
+
+      - name: Localizar projeto Android
+        id: project
+        shell: bash
+        run: |
+          SETTINGS=$(find extracted -type f \( -name "settings.gradle.kts" -o -name "settings.gradle" \) | head -n 1)
+
+          if [ -z "$SETTINGS" ]; then
+            echo "ERRO: settings.gradle não encontrado dentro do ZIP"
+            find extracted -type f
+            exit 1
+          fi
+
+          PROJECT_DIR=$(dirname "$SETTINGS")
+          echo "dir=$PROJECT_DIR" >> "$GITHUB_OUTPUT"
+          echo "Projeto encontrado em: $PROJECT_DIR"
+
+      - name: Configurar Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Compilar APK
+        shell: bash
+        run: |
+          cd "${{ steps.project.outputs.dir }}"
+
+          if [ -f "./gradlew" ]; then
+            chmod +x ./gradlew
+            ./gradlew assembleDebug --stacktrace
+          else
+            gradle assembleDebug --stacktrace
+          fi
+
+      - name: Localizar APK
+        id: apk
+        shell: bash
+        run: |
+          APK=$(find "${{ steps.project.outputs.dir }}" -type f -path "*/build/outputs/apk/debug/*.apk" | head -n 1)
+
+          if [ -z "$APK" ]; then
+            echo "ERRO: APK não encontrado"
+            exit 1
+          fi
+
+          echo "path=$APK" >> "$GITHUB_OUTPUT"
+          echo "APK criado: $APK"
+
+      - name: Disponibilizar TV25 APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TV25-APK
+          path: ${{ steps.apk.outputs.path }}
+          if-no-files-found: error
